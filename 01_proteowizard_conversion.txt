@@ -1,0 +1,145 @@
+## original command from https://hub.docker.com/r/proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses
+docker run -it --rm -v /your/data:/data proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses wine msconvert /data/file.raw -o /data
+
+
+## change path
+cd ~/Documents/Projects/20250715_metabolomics_ringtrial/
+
+## replace /your/data
+## lab_Bindila
+cd lab_Bindila
+
+# AG_Bindila_MSCoreSys_ringtrial_Negative_mode_QC_Raw_file_280425
+sudo docker run -it --rm \
+  -v ./AG_Bindila_MSCoreSys_ringtrial_Negative_mode_QC_Raw_file_280425:/data \
+  proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses \
+  wine msconvert "/data/*.d" \
+  --filter "peakPicking true 1-" \
+  --filter "msLevel 1-" \
+  --zlib --combineIonMobilitySpectra \
+  -o /data
+mkdir ./AG_Bindila_MSCoreSys_ringtrial_Negative_mode_QC_Raw_file_280425/mzML
+chown thomas:thomas ./AG_Bindila_MSCoreSys_ringtrial_Negative_mode_QC_Raw_file_280425/*.mzML
+sudo chmod 755 ./AG_Bindila_MSCoreSys_ringtrial_Negative_mode_QC_Raw_file_280425/*.mzML
+mv ./AG_Bindila_MSCoreSys_ringtrial_Negative_mode_QC_Raw_file_280425/*.mzML ./AG_Bindila_MSCoreSys_ringtrial_Negative_mode_QC_Raw_file_280425/mzML
+
+# AG_Bindila_MSCoreSys_ringtrial_Positive_mode_QC_Raw_file_280425
+sudo docker run -it --rm \
+  -v ./AG_Bindila_MSCoreSys_ringtrial_Positive_mode_QC_Raw_file_280425:/data \
+  proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses \
+  wine msconvert "/data/*.d" \
+  --filter "peakPicking true 1-" \
+  --filter "msLevel 1-" \
+  --zlib --combineIonMobilitySpectra \
+  -o /data
+mkdir ./AG_Bindila_MSCoreSys_ringtrial_Positive_mode_QC_Raw_file_280425/mzML
+sudo chown thomas:thomas ./AG_Bindila_MSCoreSys_ringtrial_Positive_mode_QC_Raw_file_280425/*.mzML
+sudo chmod 755 ./AG_Bindila_MSCoreSys_ringtrial_Positive_mode_QC_Raw_file_280425/*.mzML
+mv ./AG_Bindila_MSCoreSys_ringtrial_Positive_mode_QC_Raw_file_280425/*.mzML ./AG_Bindila_MSCoreSys_ringtrial_Positive_mode_QC_Raw_file_280425/mzML
+cd ..
+
+## lab_Hopf
+cd lab_Hopf
+
+# Hopf_lipidomic_neg/final
+sudo docker run -it --rm \
+  -v ./Hopf_lipidomic_neg/final:/data \
+  proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses \
+  wine msconvert "/data/*.d" \
+  --filter "peakPicking true 1-" \
+  --filter "msLevel 1-" \
+  --zlib --combineIonMobilitySpectra \
+  -o /data
+mkdir ./Hopf_lipidomic_neg/final/mzML
+sudo chown thomas:thomas ./Hopf_lipidomic_neg/final/*.mzML
+sudo chmod 755 ./Hopf_lipidomic_neg/final/*.mzML
+mv ./Hopf_lipidomic_neg/final/*.mzML ./Hopf_lipidomic_neg/final/mzML
+
+# Hopf_lipidomic_pos/final
+sudo docker run -it --rm \
+  -v ./Hopf_lipidomic_pos/final:/data \
+  proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses \
+  wine msconvert "/data/*.d" \
+  --filter "peakPicking true 1-" \
+  --filter "msLevel 1-" \
+  --zlib --combineIonMobilitySpectra \
+  -o /data
+mkdir ./Hopf_lipidomic_pos/final/mzML
+sudo chown thomas:thomas ./Hopf_lipidomic_pos/final/*.mzML
+sudo chmod 755 ./Hopf_lipidomic_pos/final/*.mzML
+mv ./Hopf_lipidomic_pos/final/*.mzML ./Hopf_lipidomic_pos/final/mzML
+
+# Hopf_small metabolites_pos_neg/neg
+sudo docker run -it --rm \
+  -v ./Hopf_small_metabolites_pos_neg/neg:/data \
+  proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses \
+  wine msconvert "/data/*.d" \
+  --filter "peakPicking true 1-" \
+  --filter "msLevel 1-" \
+  --zlib --combineIonMobilitySpectra \
+  -o /data
+mkdir ./Hopf_small_metabolites_pos_neg/neg/mzML
+sudo chown thomas:thomas ./Hopf_small_metabolites_pos_neg/neg/*.mzML
+sudo chmod 755 ./Hopf_small_metabolites_pos_neg/neg/*.mzML
+mv ./Hopf_small_metabolites_pos_neg/neg/*.mzML ./Hopf_small_metabolites_pos_neg/neg/mzML
+
+# Hopf_small metabolites_pos_neg/pos
+sudo docker run -it --rm \
+  -v ./Hopf_small_metabolites_pos_neg/pos:/data \
+  proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses \
+  wine msconvert "/data/*.d" \
+  --filter "peakPicking true 1-" \
+  --filter "msLevel 1-" \
+  --zlib --combineIonMobilitySpectra \
+  -o /data
+mkdir ./Hopf_small_metabolites_pos_neg/pos/mzML
+sudo chown thomas:thomas ./Hopf_small_metabolites_pos_neg/pos/*.mzML
+sudo chmod 755 ./Hopf_small_metabolites_pos_neg/pos/*.mzML
+mv ./Hopf_small_metabolites_pos_neg/pos/*.mzML ./Hopf_small_metabolites_pos_neg/pos/mzML
+
+cd ..
+
+## lab_Poschet
+cd lab_Poschet
+sudo docker run -it --rm \
+  -v ./:/data \
+  proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses \
+  wine msconvert "/data/*.wiff" \
+  --filter "peakPicking true 1-" \
+  --filter "msLevel 1-" \
+  --zlib \
+  -o /data
+mkdir ./mzML
+sudo chown thomas:thomas ./*.mzML
+sudo chmod 755 ./*.mzML
+mv ./*.mzML ./mzML
+
+cd ..
+
+## lab_Schmidlin
+cd lab_Schmidlin
+sudo docker run -it --rm \
+  -v ./:/data \
+  proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses \
+  wine msconvert "/data/*.wiff" \
+  --filter "peakPicking true 1-" \
+  --filter "msLevel 1-" \
+  --zlib \
+  -o /data
+mkdir ./mzML_from_wiff
+sudo chown thomas:thomas ./*.mzML
+sudo chmod 755 ./*.mzML
+mv ./*.mzML ./mzML_from_wiff
+
+sudo docker run -it --rm \
+  -v ./:/data \
+  proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses \
+  wine msconvert "/data/*.wiff2" \
+  --filter "peakPicking true 1-" \
+  --filter "msLevel 1-" \
+  --zlib \
+  -o /data
+mkdir ./mzML
+sudo chown thomas:thomas ./*.mzML
+sudo chmod 755 ./*.mzML
+mv ./*.mzML ./mzML
