@@ -1,0 +1,88 @@
+---
+title: "02_qc_metrics"
+author: "Thomas Naake"
+author:
+    - Thomas Naake^[European Molecular Biology Laboratory, Meyerhofstrasse 1, 69117 Heidelberg, Germany]
+fig_width: 15
+fig_height: 10
+fontsize: 12pt
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: TRUE
+    theme: united
+    number_sections: true
+    highlight: tango
+---
+
+```{r env, include=FALSE, echo=FALSE, cache=FALSE}
+suppressPackageStartupMessages(library("MsQuality"))
+knitr::opts_knit$set(root.dir = "~/Documents/GitHub/MsCoreSys_metabolomics_ringtrial")
+```
+
+# Create Spectra object
+
+Get all mzML files.
+```{r}
+## lab_Bindila
+bindila_metab_neg <- list.files(
+    "data/lab_Bindila/AG_Bindila_MSCoreSys_ringtrial_Negative_mode_QC_Raw_file_280425/mzML/",
+    pattern = "[.]mzML", full.names = TRUE)
+bindila_metab_neg_mzML <- list.files(
+    "data/lab_Bindila/AG_Bindila_MSCoreSys_ringtrial_Negative_mode_QC_Raw_files_mzML/",
+    pattern = "[.]mzML", full.names = TRUE)
+bindila_metab_pos <- list.files(
+    "data/lab_Bindila/AG_Bindila_MSCoreSys_ringtrial_Positive_mode_QC_Raw_file_280425/mzML/",
+    pattern = "[.]mzML", full.names = TRUE)
+bindila_metab_pos_mzML <- list.files(
+    "data/lab_Bindila/AG_Bindila_MSCoreSys_ringtrial_Positive_mode_QC_Raw_files_mzML/",
+    pattern = "[.]mzML", full.names = TRUE)
+
+## lab_Hopf
+hopf_lipid_neg <- list.files(
+    "data/lab_Hopf/Hopf_lipidomic_neg/final/mzML/",
+    pattern = "[.]mzML", full.names = TRUE)
+hopf_lipid_pos <- list.files(
+    "data/lab_Hopf/Hopf_lipidomic_pos/final/mzML/",
+    pattern = "[.]mzML", full.names = TRUE)
+hopf_metab_neg <- list.files(
+    "data/lab_Hopf/Hopf_small_metabolites_pos_neg/neg/mzML/",
+    pattern = "[.]mzML", full.names = TRUE)
+hopf_metab_pos <- list.files(
+    "data/lab_Hopf/Hopf_small_metabolites_pos_neg/pos/mzML/",
+    pattern = "[.]mzML", full.names = TRUE)
+
+## lab_Poschet
+poschet_metab <- list.files(
+    "data/lab_Poschet//mzML/",
+    pattern = "[.]mzML", full.names = TRUE)
+
+## lab_Schmidlin
+schmidlin_metab_wiff <- list.files(
+    "data/lab_Schmidlin/mzML_from_wiff/",
+    pattern = "[.]mzML", full.names = TRUE)
+schmidlin_metab_wiff2 <- list.files(
+    "data/lab_Schmidlin/mzML_from_wiff2/",
+    pattern = "[.]mzML", full.names = TRUE)
+```
+
+Create `Spectra` object.
+
+```{r}
+all_mzML_files <- c(
+    ## lab_Bindila
+    #bindila_metab_neg, bindila_metab_neg_mzML, bindila_metab_pos, 
+    #bindila_metab_pos_mzML
+
+    ## lab_Hopf
+    #hopf_lipid_neg, hopf_lipid_pos, hopf_metab_neg, hopf_metab_pos
+
+    ## lab_Poschet
+    poschet_metab
+
+    ## lab_Schmidlin
+    #schmidlin_metab_wiff, schmidlin_metab_wiff2
+)
+sps <- Spectra(all_mzML_files, backEnd = MsBackendmzR(), BPPARAM = SerialParam())
+```
