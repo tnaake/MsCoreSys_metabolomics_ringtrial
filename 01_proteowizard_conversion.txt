@@ -107,6 +107,7 @@ sudo docker run -it --rm \
   wine msconvert "/data/*.wiff" \
   --filter "peakPicking true 1-" \
   --filter "msLevel 1-" \
+  --srmAsSpectra \
   --zlib \
   -o /data
 mkdir ./mzML
