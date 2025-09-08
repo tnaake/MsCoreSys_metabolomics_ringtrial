@@ -77,31 +77,47 @@ all_mzML_files <- c(
 
     ## lab_Hopf
     hopf_lipid_neg, hopf_lipid_pos, hopf_metab_neg, hopf_metab_pos,
+    
+    ## lab_Poschet
+    poschet_metab,
 
     ## lab_Schmidlin
     schmidlin_metab_wiff, schmidlin_metab_wiff2
 )
-sps <- Spectra(all_mzML_files[20], backend = MsBackendMzR(), BPPARAM = SerialParam())
+sps <- Spectra(all_mzML_files, backend = MsBackendMzR(), BPPARAM = SerialParam())
 
 
 ## lab_Poschet
-poschet_metab <- poschet_metab[1]
+# poschet_metab <- poschet_metab[1]
+# 
+# be <- backendInitialize(ChromBackendMzR(),
+#     files = poschet_metab,
+#     BPPARAM = SerialParam()
+# )
+# 
+# chrom <- Chromatograms(be)
+# productMz_chrom <- sort(unique(productMz(chrom)))
+# precursorMz_chrom <- sort(unique(precursorMz(chrom)))
+# chrom$rtime ## 55-1627 events per entry
+# 
+# sps <- Spectra(poschet_metab, backend = MsBackendMzR(), BPPARAM = SerialParam())
+# intensity(chrom[67094,])
+# chrom <- chrom[1:10,]
+# chrom$precursorMz
+```
 
-be <- backendInitialize(ChromBackendMzR(),
-    files = poschet_metab,
-    BPPARAM = SerialParam()
-)
+# Calculate Metrics
 
-chrom <- Chromatograms(be)
-productMz_chrom <- sort(unique(productMz(chrom)))
-precursorMz_chrom <- sort(unique(precursorMz(chrom)))
-chrom$rtime ## 55-1627 events per entry
+```{r}
+qM_msLevel1 <- calculateMetrics(object = sps, BPPARAM = SerialParam(), 
+    change = "jump", relativeTo = "Q1", msLevel = 1)
+qM_msLevel2 <- calculateMetrics(object = sps, BPPARAM = SerialParam(), 
+    change = "jump", relativeTo = "Q1", msLevel = 2)
+``` 
 
-sps <- Spectra(poschet_metab, backend = MsBackendMzR(), BPPARAM = SerialParam())
+Truncate file names.
 
+```{r}
+stringr::str_remove(string = rownames(qM), pattern = "data/lab_Poschet//")
 
-intensity(chrom[67094,])
-
-chrom <- chrom[1:10,]
-chrom$precursorMz
 ```
