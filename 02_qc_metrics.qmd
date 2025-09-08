@@ -72,17 +72,36 @@ Create `Spectra` object.
 ```{r}
 all_mzML_files <- c(
     ## lab_Bindila
-    #bindila_metab_neg, bindila_metab_neg_mzML, bindila_metab_pos, 
-    #bindila_metab_pos_mzML
+    bindila_metab_neg, bindila_metab_neg_mzML, bindila_metab_pos, 
+    bindila_metab_pos_mzML,
 
     ## lab_Hopf
-    #hopf_lipid_neg, hopf_lipid_pos, hopf_metab_neg, hopf_metab_pos
-
-    ## lab_Poschet
-    poschet_metab
+    hopf_lipid_neg, hopf_lipid_pos, hopf_metab_neg, hopf_metab_pos,
 
     ## lab_Schmidlin
-    #schmidlin_metab_wiff, schmidlin_metab_wiff2
+    schmidlin_metab_wiff, schmidlin_metab_wiff2
 )
-sps <- Spectra(all_mzML_files, backEnd = MsBackendmzR(), BPPARAM = SerialParam())
+sps <- Spectra(all_mzML_files[20], backend = MsBackendMzR(), BPPARAM = SerialParam())
+
+
+## lab_Poschet
+poschet_metab <- poschet_metab[1]
+
+be <- backendInitialize(ChromBackendMzR(),
+    files = poschet_metab,
+    BPPARAM = SerialParam()
+)
+
+chrom <- Chromatograms(be)
+productMz_chrom <- sort(unique(productMz(chrom)))
+precursorMz_chrom <- sort(unique(precursorMz(chrom)))
+chrom$rtime ## 55-1627 events per entry
+
+sps <- Spectra(poschet_metab, backend = MsBackendMzR(), BPPARAM = SerialParam())
+
+
+intensity(chrom[67094,])
+
+chrom <- chrom[1:10,]
+chrom$precursorMz
 ```
