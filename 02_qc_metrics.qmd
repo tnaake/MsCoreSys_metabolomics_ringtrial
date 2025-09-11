@@ -1,8 +1,7 @@
 ---
 title: "02_qc_metrics"
-author: "Thomas Naake"
 author:
-    - Thomas Naake^[European Molecular Biology Laboratory, Meyerhofstrasse 1, 69117 Heidelberg, Germany]
+    - Thomas Naake^[PHysikalisch-Technische Bundesanstalt, Bundesallee 100, 38116 Braunschweig, Germany]
 fig_width: 15
 fig_height: 10
 fontsize: 12pt
@@ -18,6 +17,7 @@ output:
 
 ```{r env, include=FALSE, echo=FALSE, cache=FALSE}
 suppressPackageStartupMessages(library("MsQuality"))
+suppressPackageStartupMessages(library("Spectra"))
 knitr::opts_knit$set(root.dir = "~/Documents/GitHub/MsCoreSys_metabolomics_ringtrial")
 ```
 
@@ -72,8 +72,11 @@ Create `Spectra` object.
 ```{r}
 all_mzML_files <- c(
     ## lab_Bindila
-    bindila_metab_neg, bindila_metab_neg_mzML, bindila_metab_pos, 
-    bindila_metab_pos_mzML,
+    bindila_metab_neg, 
+    bindila_metab_pos, 
+    ## do not load the mzML files p
+    ##bindila_metab_neg_mzML, 
+    ##bindila_metab_pos_mzML,
 
     ## lab_Hopf
     hopf_lipid_neg, hopf_lipid_pos, hopf_metab_neg, hopf_metab_pos,
@@ -84,7 +87,7 @@ all_mzML_files <- c(
     ## lab_Schmidlin
     schmidlin_metab_wiff, schmidlin_metab_wiff2
 )
-sps <- Spectra(all_mzML_files, backend = MsBackendMzR(), BPPARAM = SerialParam())
+sps <- Spectra(all_mzML_files[-10], backend = MsBackendMzR(), BPPARAM = SerialParam())
 
 
 ## lab_Poschet
@@ -109,15 +112,143 @@ sps <- Spectra(all_mzML_files, backend = MsBackendMzR(), BPPARAM = SerialParam()
 # Calculate Metrics
 
 ```{r}
-qM_msLevel1 <- calculateMetrics(object = sps, BPPARAM = SerialParam(), 
+qM_msLevel1 <- calculateMetrics(object = sps, 
     change = "jump", relativeTo = "Q1", msLevel = 1)
-qM_msLevel2 <- calculateMetrics(object = sps, BPPARAM = SerialParam(), 
+qM_msLevel2 <- calculateMetrics(object = sps, 
     change = "jump", relativeTo = "Q1", msLevel = 2)
+``` 
+
+Save the data.
+
+```{r}
+saveRDS(sps, file = "data/sps.RDS")
+saveRDS(qM_msLevel1, file = "data/qM_msLevel1.RDS")
+saveRDS(qM_msLevel2, file = "data/qM_msLevel2.RDS")
+
+```
+
+Add information on the lab in the `lab` column.
+
+```{r}
+## qM_msLevel1
+qM_msLevel1<- qM_msLevel1 |>
+    as.data.frame()
+qM_msLevel1[["lab"]] <- NA
+qM_msLevel1[["lab"]] <- ifelse(
+    test = grepl(rownames(qM_msLevel1), pattern = "lab_Bindila"), 
+    yes = "lab_Bindila", no = qM_msLevel1[["lab"]])
+qM_msLevel1[["lab"]] <- ifelse(
+    test = grepl(rownames(qM_msLevel1), pattern = "lab_Hopf"), 
+    yes = "lab_Hopf", no = qM_msLevel1[["lab"]])
+qM_msLevel1[["lab"]] <- ifelse(
+    test = grepl(rownames(qM_msLevel1), pattern = "lab_Poschet"), 
+    yes = "lab_Poschet", no = qM_msLevel1[["lab"]])
+qM_msLevel1[["lab"]] <- ifelse(
+    test = grepl(rownames(qM_msLevel1), pattern = "lab_Schmidlin"), 
+    yes = "lab_Schmidln", no = qM_msLevel1[["lab"]])
+
+## qM_msLevel2
+qM_msLevel2 <- qM_msLevel2 |>
+    as.data.frame()
+qM_msLevel2[["lab"]] <- NA
+qM_msLevel2[["lab"]] <- ifelse(
+    test = grepl(rownames(qM_msLevel2), pattern = "lab_Bindila"), 
+    yes = "lab_Bindila", no = qM_msLevel2[["lab"]])
+qM_msLevel2[["lab"]] <- ifelse(
+    test = grepl(rownames(qM_msLevel2), pattern = "lab_Hopf"), 
+    yes = "lab_Hopf", no = qM_msLevel2[["lab"]])
+qM_msLevel2[["lab"]] <- ifelse(
+    test = grepl(rownames(qM_msLevel2), pattern = "lab_Poschet"), 
+    yes = "lab_Poschet", no = qM_msLevel2[["lab"]])
+qM_msLevel2[["lab"]] <- ifelse(
+    test = grepl(rownames(qM_msLevel2), pattern = "lab_Schmidlin"), 
+    yes = "lab_Schmidln", no = qM_msLevel2[["lab"]])
+```
+
+Add information on ionization mode in the `ionization_column`.
+
+```{r}
+rownames(qM_msLevel1)
+
 ``` 
 
 Truncate file names.
 
 ```{r}
-stringr::str_remove(string = rownames(qM), pattern = "data/lab_Poschet//")
+## truncate file names
+rownames(qM_msLevel1) <- lapply(
+    strsplit(rownames(qM_msLevel1), split = "data/"), "[", 2) |>
+    unlist()
+rownames(qM_msLevel2) <- lapply(
+    strsplit(rownames(qM_msLevel2), split = "data/"), "[", 2) |>
+    unlist()
 
+## remove .mzML file ending
+rownames(qM_msLevel1) <- stringr::str_remove(rownames(qM_msLevel1), 
+    pattern = "[.]mzML$")
+rownames(qM_msLevel2) <- stringr::str_remove(rownames(qM_msLevel2), 
+    pattern = "[.]mzML$")
+
+## remove lab specific strings
+## lab_Bindila
+rownames(qM_msLevel1) <- stringr::str_remove(string = rownames(qM_msLevel1), 
+    pattern = "lab_Bindila/")
+rownames(qM_msLevel2) <- stringr::str_remove(string = rownames(qM_msLevel2), 
+    pattern = "lab_Bindila/")
+
+## lab_Hopf
+rownames(qM_msLevel1) <- stringr::str_remove(string = rownames(qM_msLevel1), 
+    pattern = "lab_Hopf/Hopf_lipidomic_neg/final/mzML/")
+rownames(qM_msLevel2) <- stringr::str_remove(string = rownames(qM_msLevel2), 
+    pattern = "lab_Hopf/Hopf_lipidomic_neg/final/mzML/")
+rownames(qM_msLevel1) <- stringr::str_remove(string = rownames(qM_msLevel1), 
+    pattern = "lab_Hopf/Hopf_lipidomic_pos/final/mzML/")
+rownames(qM_msLevel2) <- stringr::str_remove(string = rownames(qM_msLevel2), 
+    pattern = "lab_Hopf/Hopf_lipidomic_pos/final/mzML/")
+rownames(qM_msLevel1) <- stringr::str_remove(string = rownames(qM_msLevel1), 
+    pattern = "lab_Hopf/Hopf_small_metabolites_pos_neg/neg/mzML/")
+rownames(qM_msLevel2) <- stringr::str_remove(string = rownames(qM_msLevel2), 
+    pattern = "lab_Hopf/Hopf_small_metabolites_pos_neg/neg/mzML/")
+rownames(qM_msLevel1) <- stringr::str_remove(string = rownames(qM_msLevel1), 
+    pattern = "lab_Hopf/Hopf_small_metabolites_pos_neg/pos/mzML/")
+rownames(qM_msLevel2) <- stringr::str_remove(string = rownames(qM_msLevel2), 
+    pattern = "lab_Hopf/Hopf_small_metabolites_pos_neg/pos/mzML/")
+
+## lab_Poschet
+rownames(qM_msLevel1) <- stringr::str_remove(string = rownames(qM_msLevel1), 
+    pattern = "lab_Poschet/mzML/")
+rownames(qM_msLevel2) <- stringr::str_remove(string = rownames(qM_msLevel2), 
+    pattern = "lab_Poschet/mzML/")
+
+## lab_Schmidlin
+rownames(qM_msLevel1) <- stringr::str_remove(string = rownames(qM_msLevel1), 
+    pattern = "lab_Schmidlin/mzML_from_wiff/")
+rownames(qM_msLevel2) <- stringr::str_remove(string = rownames(qM_msLevel2), 
+    pattern = "lab_Schmidlin/mzML_from_wiff/")
+rownames(qM_msLevel1) <- ifelse(
+    grepl(rownames(qM_msLevel1), pattern = "lab_Schmidlin/mzML_from_wiff2"),
+    paste(rownames(qM_msLevel1), "_wiff2", sep = ""), rownames(qM_msLevel1))
+rownames(qM_msLevel2) <- ifelse(
+    grepl(rownames(qM_msLevel2), pattern = "lab_Schmidlin/mzML_from_wiff2"),
+    paste(rownames(qM_msLevel2), "_wiff2", sep = ""), rownames(qM_msLevel2))
+rownames(qM_msLevel1) <- stringr::str_remove(string = rownames(qM_msLevel1), 
+    pattern = "lab_Schmidlin/mzML_from_wiff2/")
+rownames(qM_msLevel2) <- stringr::str_remove(string = rownames(qM_msLevel2), 
+    pattern = "lab_Schmidlin/mzML_from_wiff2/")
 ```
+
+# Plot the metrics
+
+```{r}
+plotMetric(qM_msLevel1, metric = "areaUnderTic", plotly = FALSE) +
+    facet_grid(~ rep(qM_msLevel1$lab, 5), scales = "free_x") + 
+    theme(axis.text.x=element_blank())
+
+qM_msLevel1 |>
+    dplyr::filter(lab == "lab_Hopf") |>
+    plotMetric(metric = "areaUnderTic", plotly = FALSE) +
+        theme(axis.text.x=element_blank())
+
+``` 
+
+
