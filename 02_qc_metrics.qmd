@@ -124,7 +124,6 @@ Save the data.
 saveRDS(sps, file = "data/sps.RDS")
 saveRDS(qM_msLevel1, file = "data/qM_msLevel1.RDS")
 saveRDS(qM_msLevel2, file = "data/qM_msLevel2.RDS")
-
 ```
 
 Add information on the lab in the `lab` column.
@@ -145,32 +144,76 @@ qM_msLevel1[["lab"]] <- ifelse(
     yes = "lab_Poschet", no = qM_msLevel1[["lab"]])
 qM_msLevel1[["lab"]] <- ifelse(
     test = grepl(rownames(qM_msLevel1), pattern = "lab_Schmidlin"), 
-    yes = "lab_Schmidln", no = qM_msLevel1[["lab"]])
+    yes = "lab_Schmidlin", no = qM_msLevel1[["lab"]])
 
 ## qM_msLevel2
-qM_msLevel2 <- qM_msLevel2 |>
-    as.data.frame()
-qM_msLevel2[["lab"]] <- NA
-qM_msLevel2[["lab"]] <- ifelse(
-    test = grepl(rownames(qM_msLevel2), pattern = "lab_Bindila"), 
-    yes = "lab_Bindila", no = qM_msLevel2[["lab"]])
-qM_msLevel2[["lab"]] <- ifelse(
-    test = grepl(rownames(qM_msLevel2), pattern = "lab_Hopf"), 
-    yes = "lab_Hopf", no = qM_msLevel2[["lab"]])
-qM_msLevel2[["lab"]] <- ifelse(
-    test = grepl(rownames(qM_msLevel2), pattern = "lab_Poschet"), 
-    yes = "lab_Poschet", no = qM_msLevel2[["lab"]])
-qM_msLevel2[["lab"]] <- ifelse(
-    test = grepl(rownames(qM_msLevel2), pattern = "lab_Schmidlin"), 
-    yes = "lab_Schmidln", no = qM_msLevel2[["lab"]])
+qM_msLevel2[["lab"]] <- qM_msLevel1[["lab"]]
 ```
 
 Add information on ionization mode in the `ionization_column`.
 
 ```{r}
-rownames(qM_msLevel1)
+qM_msLevel1[["ionization_mode"]] <- NA
 
-``` 
+## lab_Bindila
+qM_msLevel1[["ionization_mode"]] <- ifelse(
+    test = qM_msLevel1[["lab"]] == "lab_Bindila" & grepl(rownames(qM_msLevel1), pattern = "Negative_mode"),
+    yes = "neg", no = qM_msLevel1[["ionization_mode"]])
+qM_msLevel1[["ionization_mode"]] <- ifelse(
+    test = qM_msLevel1[["lab"]] == "lab_Bindila" & grepl(rownames(qM_msLevel1), pattern = "Positive_mode"),
+    yes = "pos", no = qM_msLevel1[["ionization_mode"]])
+
+## lab_Hopf
+qM_msLevel1[["ionization_mode"]] <- ifelse(
+    test = qM_msLevel1[["lab"]] == "lab_Hopf" & grepl(rownames(qM_msLevel1), pattern = "lipidomic_neg"),
+    yes = "neg", no = qM_msLevel1[["ionization_mode"]])
+qM_msLevel1[["ionization_mode"]] <- ifelse(
+    test = qM_msLevel1[["lab"]] == "lab_Hopf" & grepl(rownames(qM_msLevel1), pattern = "lipidomic_pos"),
+    yes = "pos", no = qM_msLevel1[["ionization_mode"]])
+qM_msLevel1[["ionization_mode"]] <- ifelse(
+    test = qM_msLevel1[["lab"]] == "lab_Hopf" & grepl(rownames(qM_msLevel1), pattern = "small_metabolites_pos_neg/neg"),
+    yes = "neg", no = qM_msLevel1[["ionization_mode"]])
+qM_msLevel1[["ionization_mode"]] <- ifelse(
+    test = qM_msLevel1[["lab"]] == "lab_Hopf" & grepl(rownames(qM_msLevel1), pattern = "small_metabolites_pos_neg/pos"),
+    yes = "pos", no = qM_msLevel1[["ionization_mode"]])
+
+## lab_Poschet
+qM_msLevel1[["ionization_mode"]] <- ifelse(
+    test = qM_msLevel1[["lab"]] == "lab_Poschet", yes = "pos", no = qM_msLevel1[["ionization_mode"]])
+
+## lab_Schmidlin
+qM_msLevel1[["ionization_mode"]] <- ifelse(
+    test = qM_msLevel1[["lab"]] == "lab_Schmidlin", yes = "pos", no = qM_msLevel1[["ionization_mode"]])
+
+## qM_msLevel2
+qM_msLevel2[["ionization_mode"]] <- qM_msLevel1[["ionization_mode"]] 
+```
+
+Add information on sample type.
+
+```{r}
+qM_msLevel1[["sample_type"]] <- NA
+
+## lab_Bindila
+"pQC" = "pooled_QC"
+
+## lab_Hopf
+"Ctl" = "Ctl"
+"KA" = "KA"
+"NIST" = "NIST"
+"pooled_QC_diluted" = "pooled_QC_diluted"
+"pooled_QC_undiluted" = "pooled_QC_undiluted"
+"processed_blank" = "processed_blank"
+"solvent_blank" = "solvent_blank"
+"water_blank" = "water_blank"
+"_KA" = "KA" ##? ## small_metabolites
+"_C" = "Ctl" ##?
+"PooledQC" = "pooled_QC"
+"ProcessingBlank" = "processed_blank"
+
+## lab_Poschet
+
+```
 
 Truncate file names.
 
