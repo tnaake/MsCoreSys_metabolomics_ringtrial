@@ -147,6 +147,8 @@ qM_msLevel1[["lab"]] <- ifelse(
     yes = "lab_Schmidlin", no = qM_msLevel1[["lab"]])
 
 ## qM_msLevel2
+qM_msLevel2 <- qM_msLevel2 |>
+    as.data.frame()
 qM_msLevel2[["lab"]] <- qM_msLevel1[["lab"]]
 ```
 
@@ -283,15 +285,27 @@ rownames(qM_msLevel2) <- stringr::str_remove(string = rownames(qM_msLevel2),
 # Plot the metrics
 
 ```{r}
-plotMetric(qM_msLevel1, metric = "areaUnderTic", plotly = FALSE) +
-    facet_grid(~ rep(qM_msLevel1$lab, 5), scales = "free_x") + 
-    theme(axis.text.x=element_blank())
+#plotMetric(qM_msLevel1, metric = "areaUnderTic", plotly = FALSE) +
+    #facet_grid(~ qM_msLevel1$lab + qM_msLevel1$ionization_mode, 5) +
+    #facet_grid(~ rep(qM_msLevel1$lab, 5) + rep(qM_msLevel1$ionization_mode, 5), scales = c("free_x", "free_y")) + 
+    #theme(axis.text.x=element_blank())
 
+qM_msLevel1 |>
+    dplyr::filter(lab == "lab_Bindila") |>
+    plotMetric(metric = "areaUnderTic", plotly = FALSE) +
+        theme(axis.text.x=element_blank())
 qM_msLevel1 |>
     dplyr::filter(lab == "lab_Hopf") |>
     plotMetric(metric = "areaUnderTic", plotly = FALSE) +
         theme(axis.text.x=element_blank())
-
+qM_msLevel1 |>
+    dplyr::filter(lab == "lab_Poschet") |>
+    plotMetric(metric = "areaUnderTic", plotly = FALSE) +
+        theme(axis.text.x=element_blank())
+qM_msLevel1 |>
+    dplyr::filter(lab == "lab_Schmidlin") |>
+    plotMetric(metric = "areaUnderTic", plotly = FALSE) +
+        theme(axis.text.x=element_blank())
 ``` 
 
 
