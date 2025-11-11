@@ -123,13 +123,26 @@ similarity_mat_l <- list(
         dimnames = list(files, files))
 )
 
+## normalize the intensities (with max intensity = 1)
+...
+
 for (comb_col_i in seq_len(ncol(files_combn))) {
     
     ## obtain the file names of comb_col_i and assign to row_i and col_i
     row_i <- files_combinations[1, comb_col_i]
     col_i <- files_combinations[2, comb_col_i]
     
-    ## 
+    ## obtain sps_row_i and sps_col_i that contains only spectral information
+    ## from the respective files
+    sps_row_i <- sps[sps$dataOrigin == row_i]
+    sps_col_i <- sps[sps$dataOrigin == col_i]
+    
+    ## iterate through elements of sps_row_i
+    for (j in seq_len(length(sps_row_i))) {
+        spectra_similarity <- compareSpectra(x = sps_row_i[j], y = sps_col_i, 
+            MAPFUNN = joinPeaks, type = "outer", FUN = MsCoreUtils::ndotproduct, 
+            ppm = 20)
+    }
     
 }
 
