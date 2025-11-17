@@ -8,6 +8,9 @@ from sklearn.cluster import MiniBatchKMeans
 from scipy.spatial.distance import cdist
 import ot ## POT: pip install pot (Python Optimal Transport)
 from matchms.importing import load_from_mzml
+from matchms.filtering import add_precursor_mz, add_retention_time, derive_adduct_from_name, clean_adduct
+from matchms.filtering import normalize_intensities, require_precursor_mz, require_correct_ionmode,  correct_charge
+from matchms.filtering import add_parent_mass, select_by_relative_intensity, require_minimum_number_of_peaks
 from lxml import etree
 
 ## ms2deepscore contains embedding and model handling functionality:
@@ -70,7 +73,10 @@ def load_spectra_with_polarity(mzml_path):
 ## 3) Convert a matchms Spectrum into an embedding
 def get_embedding(spectrum, embedding_model):
     """
-    Ms2DeepScore calls embedding_model.get_embedding_array()
+    :param spectrum: matchms spectrum object
+    :param embedding_model: ms2deepscore embedding model
+    :return:
+    Call embedding_model.get_embedding_array() from ms2deepscore
     which returns a 1D numpy embedding vector.
     """
     ## obtain the embedding vector
@@ -80,6 +86,27 @@ def get_embedding(spectrum, embedding_model):
     return np.array(embedding)
 
 ## 3) For each mzML file: get all embeddings
+def preprocess_spectrum_list(spectra):
+    spectra_processed = []
+    for spectra_i in spectra:
+        ## apply preprocessing steps in sequence
+        spectra_i = add_precursor_mz(spectra_i)
+        spectra_i = add_retention_time(spectra_i)
+        spectra_i = derive_adduct_from_name(spectra_i)
+        spectra_i = clean_adduct(spectra_i)
+        ## normalize: all intensities will be within 0 and 1
+        spectra_i = normalize_intensities(spectra_i)
+        spectra_i = require_precursor_mz(spectra_i)
+        spectra_i = require_correct_ionmode(spectra_i)
+        spectra_i = correct_charge(spectra_i)
+        spectra_i = add_parent_mass(spectra_i)
+        ## remove peaks <0.5% max
+        spectra_i = select_by_relative_intensity(spectra_i, intensity_from=0.005)
+        spectra_i = require_minimum_number_of_peaks(spectra, n_required=3)
+        ## append spectra_i to spectra_processed
+        spectra_procesed.append(spectra_i)
+    return spectra_processed
+
 def get_file_embeddings(mzml_path, embedding_model):
     """
     :param mzml_path: string specifying the path to a mzML file
@@ -90,8 +117,16 @@ def get_file_embeddings(mzml_path, embedding_model):
     ## returns list of matchms.Spectrum objects
     spectra = load_spectra_with_polarity(mzml_path)
 
+
+    ## preprocess spectra
+
+
+
     ## remove empty spectra
-    spectra = [s for s in spectra if s is not None and len(s.peaks.mz) > 0]
+
+    s = select_by_mz(s, mz_from=50, mz_to=1000)  # keep only relevant m/z
+    s =
+spectra = [s for s in spectra if s is not None and len(s.peaks.mz) > 0]
 
     ## obtain embeddings per each spectrum s in spectra
     embeddings = get_embedding(spectra, embedding_model=embedding_model)
