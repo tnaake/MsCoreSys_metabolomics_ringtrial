@@ -8,66 +8,116 @@ from sklearn.cluster import MiniBatchKMeans
 from scipy.spatial.distance import cdist
 import ot ## POT: pip install pot (Python Optimal Transport)
 from matchms.importing import load_from_mzml
-# Choose embedding package:
-# Option 1: spec2vec
-from gensim.models import Word2Vec
-from spec2vec import Spec2Vec
-from spec2vec.vector_operations import calc_vector
-# Option 2 (alternative): from ms2deepscore.embedding_creator import EmbeddingCreator
+from lxml import etree
+
+## ms2deepscore contains embedding and model handling functionality:
 from ms2deepscore.models import load_model
-# Use whichever you installed
+from ms2deepscore import MS2DeepScore
 
 ###############################
-## Parameters you can tune
-N_CLUSTERS = 100 ## signatures per file (use 50-200)
-N_JOBS = 8 ## parallel workers
-EMBEDDING_MODEL_PATH = "spec2vec_pretrained.model" ## or ms2deepscore model
-model_file_name = "data/ms2deepscore_model.pt"
-model = load_model(model_file_name)
+## Parameters:
+N_CLUSTERS = 100 ## signatures per file (use e.g., 50-200)
+EMBEDDING_MODEL_PATH = "data/ms2deepscore_model.pt"
 MZML_DIR = "data/"
 MAX_SPECTRA_PER_FILE = None  ## sample limit to speed up (None = use all)
 ###############################
 
-## 1) Load embedding model (spec2vec example)
-w2v = Word2Vec.load(EMBEDDING_MODEL_PATH)
-spec2vec = Spec2Vec(model=w2v, intensity_weighting_power=0.5, allowed_missing_percentage=5.0)
+## 1) Load embedding model (pretrained model downloaded via https://zenodo.org/records/13897744)
+embedding_model = load_model(EMBEDDING_MODEL_PATH)
+m2ds_embeddings = MS2DeepScore(embedding_model)
+#w2v = Word2Vec.load(EMBEDDING_MODEL_PATH)
+#spec2vec = Spec2Vec(model=w2v, intensity_weighting_power=0.5, allowed_missing_percentage=5.0)
 
-def read_spectra(mzml_path):
+## 2) load mzML files
+def extract_polarity_from_mzml(mzml_path):
+    """
+    Returns a list of 'positive'/'negative'/None per spectrum (MS level 2 only).
+    """
+    polarity_list = []
+    file_mzML = etree.parse(mzml_path)
+
+    for spectrum in file_mzML.findall(".//{*}spectrum"):
+        ## obtain MS level
+        mslevel = spectrum.find(".//{*}cvParam[@accession='MS:1000511']")
+        if mslevel is not None and mslevel.get("value") == "2":
+            ## find positive ionization entries
+            pos = spectrum.find(".//{*}cvParam[@accession='MS:1000130']")
+            ## find negative ionization entries
+            neg = spectrum.find(".//{*}cvParam[@accession='MS:1000129']")
+
+            if pos is not None:
+                polarity_list.append("positive")
+            elif neg is not None:
+                polarity_list.append("negative")
+            else:
+                polarity_list.append(None)
+    return polarity_list
+
+def load_spectra_with_polarity(mzml_path):
+    spectra = list(load_from_mzml(mzml_path))
+    polarities = extract_polarity_from_mzml(mzml_path)
+
+    ## matchms loads only MS2 spectra, lengths should align
+    assert len(spectra) == len(polarities)
+
+    for spectrum, polarity in zip(spectra, polarities):
+        #if polarity is not None:
+        spectrum.set("ionmode", polarity)
+        #else:
+        #    spectrum.set("ionmode", None)  ## or default
+    return spectra
+
+## 3) Convert a matchms Spectrum into an embedding
+def get_embedding(spectrum, embedding_model):
+    """
+    Ms2DeepScore calls embedding_model.get_embedding_array()
+    which returns a 1D numpy embedding vector.
+    """
+    ## obtain the embedding vector
+    embedding = embedding_model.get_embedding_array(spectrum)
+
+    ## return as numpy array
+    return np.array(embedding)
+
+## 3) For each mzML file: get all embeddings
+def get_file_embeddings(mzml_path, embedding_model):
+    """
+    :param mzml_path: string specifying the path to a mzML file
+    :return:
+    For each spectra in the file specified by mzml_path, calculate the embedding.
+    Return the embedding vectors as a list.
+    """
     ## returns list of matchms.Spectrum objects
-    return list(load_from_mzml(mzml_path))
+    spectra = load_spectra_with_polarity(mzml_path)
 
-def spectrum_to_embedding(spectrum):
-    ## calc_vector returns numpy array
-    vec = calc_vector(spectrum, spec2vec)
-    return np.array(vec, dtype=float)
+    ## remove empty spectra
+    spectra = [s for s in spectra if s is not None and len(s.peaks.mz) > 0]
 
-def file_embeddings(mzml_path):#, max_spec=None):
-    specs = read_spectra(mzml_path)
-    ## downsample if max_spec is not None and there are more spectra than max_spec
-    if max_spec is not None and len(specs) > max_spec:
-        ## simple downsample
-        idx = np.linspace(0, len(specs)-1, max_spec).astype(int)
-        specs = [specs[i] for i in idx]
+    ## obtain embeddings per each spectrum s in spectra
+    embeddings = get_embedding(spectra, embedding_model=embedding_model)
 
-    ## obtain the embeddings for each spectrum in specs
-    embs = [spectrum_to_embedding(s) for s in specs]
-    embs = [e for e in embs if e is not None and np.isfinite(e).all()]
-    if len(embs)==0:
-        return np.empty((0, w2v.vector_size))
-    return np.vstack(embs)
+    ## return numpy array
+    return embeddings
 
-## 2) For each file, compute k-means signatures (centroids + weights)
-## Raw spectra per file can be thousands of points. Comparing every spectrum in file_i
-## to every spectrum in file_j would be too expensive (n_i * n_j comparisons).
-## to make this tractable, we compress each file’s embedding cloud into K
-## representative points (e.g. K = 100):
-def file_signatures(embeddings, n_clusters=N_CLUSTERS):
+# 4) Compress to K signatures per file
+def get_signatures(embeddings, N_CLUSTERS=N_CLUSTERS):
+    """
+    :param embeddings: numpy array containing the embedding
+    :param N_CLUSTERS: integer specifying the number of clusters
+    :return:
+    For each file, compute k - means signatures(centroids + weights).
+    Raw spectra per file can be thousands of points. Comparing every spectrum in file_i
+    to every spectrum in file_j would be too expensive (n_i * n_j comparisons).
+    to make this tractable, we compress each file’s embedding cloud into K
+    representative points (e.g. K = 100). Return the centers and weights of the K representative points.
+    """
+    ## if fewer spectra than clusters, use spectra themselves as signatures
     if embeddings.shape[0] == 0:
         return np.empty((0, embeddings.shape[1])), np.array([])
-    ## if fewer spectra than clusters, use spectra themselves as signatures
-    k = min(n_clusters, embeddings.shape[0])
+    k = min(N_CLUSTERS, embeddings.shape[0])
+
     ## run MiniBatch k-means on E_i
-    kmeans = MiniBatchKMeans(n_clusters=k, batch_size=1000, random_state=0)
+    kmeans = MiniBatchKMeans(n_clusters=k, random_state=0).fit(embeddings)
     labels = kmeans.fit_predict(embeddings)
     centers = kmeans.cluster_centers_
     counts = np.bincount(labels, minlength=k).astype(float)
@@ -78,43 +128,73 @@ def file_signatures(embeddings, n_clusters=N_CLUSTERS):
     ## So each file is summarized as a discrete probability distribution over K points in embedding space.
     return centers, weights
 
-## 3) Load all files and produce centers and weights from embedings
-relative_path = Path(MZML_DIR)
-files = list(relative_path.rglob("*.mzML"))
-files = sorted([str(f) for f in files])
-##files = sorted([os.path.join(MZML_DIR, f) for f in os.listdir(MZML_DIR) if f.endswith(".mzML")])
-file_centers = []
-file_weights = []
-file_names = []
 
-for fpath in files:
-    embs = file_embeddings(fpath, max_spec=MAX_SPECTRA_PER_FILE)
-    centers, weights = file_signatures(embs, n_clusters=N_CLUSTERS)
-    file_centers.append(centers) ## shape (k, d)
-    file_weights.append(weights) ## shape (k,)
-    file_names.append(os.path.basename(fpath))
+# 5) Compute pairwise Wasserstein distance using POT (OT with squared Euclidean cost)
+# ## each spectrum is a “point” in a high-dimensional “spectral meaning” space,
+# ## each file is a “cloud” (distribution) of these points,
+# ## the Wasserstein distance between two files measures how much “work” you would need to transform
+# ## one point cloud into the other,
+# ## so if file_i and file_j have very similar kinds of spectra (many overlapping or nearby embeddings),
+# ## their distributions overlap strongly --> small Wasserstein distance.
+# ## if file_i and file_j have different sets of compounds (spectra far apart in embedding space) --> large distance
+# ## given two files i and j, each has:
+# ## K1 cluster centers C_i (centers_i) and weights w_i
+# ## K2 cluster centers C_j (centers_j) and weights w_j
+# ## we can think of these as two weighted point clouds in R^m:
+# ## P_i = {(c_ik, w_ik)}^K_i _k=1
+# ## P_j = {(c_jk, w_jk)}^K_j _l=1
+def wasserstein_distance(centers_i, weights_i, centers_j, weights_j):
+    """
+    Compute the 2-Wasserstein distance (with squared Euclidean ground cost) between two
+    weighted point clouds using POT (Python Optimal Transport).
 
-## 4) Compute pairwise Wasserstein distance using POT (OT with squared Euclidean cost)
-## each spectrum is a “point” in a high-dimensional “spectral meaning” space,
-## each file is a “cloud” (distribution) of these points,
-## the Wasserstein distance between two files measures how much “work” you would need to transform
-## one point cloud into the other,
-## so if file_i and file_j have very similar kinds of spectra (many overlapping or nearby embeddings),
-## their distributions overlap strongly --> small Wasserstein distance.
-## if file_i and file_j have different sets of compounds (spectra far apart in embedding space) --> large distance
-## given two files i and j, each has:
-## K1 cluster centers C_i (centers_i) and weights w_i
-## K2 cluster centers C_j (centers_j) and weights w_j
-## we can think of these as two weighted point clouds in R^m:
-## P_i = {(c_ik, w_ik)}^K_i _k=1
-## P_j = {(c_jk, w_jk)}^K_j _l=1
-def wasserstein_between(centers_i, w_i, centers_j, w_j):
-    ## if empty cases
-    if centers_i.shape[0] == 0 and centers_j.shape[0] == 0:
-        return 0.0
-    if centers_i.shape[0] == 0 or centers_j.shape[0] == 0:
-        return np.inf
-    ## build the cost matrix (squared Euclidean):
+    This function treats each file's clustered spectral embeddings as a discrete probability
+    distribution in a high-dimensional space. Each cluster centroid acts as a support point,
+    and its associated weight represents the probability mass at that point. The Wasserstein
+    distance then measures how much "effort" is required to move the probability mass of
+    one distribution so that it matches the other.
+
+    Idea begind:
+    - Let file i be represented by:
+        - Centers: ``centers_i`` of shape (K1, m)
+        - Weights: ``weights_i`` of shape (K1,)
+      together forming a discrete distribution
+      :math:`P_i = {(c_{i,k}, w_{i,k})}_{k=1}^{K_1}`.
+    - Let file j be represented analogously by
+      :math:`P_j = {(c_{j,l}, w_{j,l})}_{l=1}^{K_2}`.
+
+    The function builds a cost matrix M where:
+        M[k, l] = ||c_{i,k} - c_{j,l}||²
+
+    Then it solves the optimal transport (OT) problem using POT’s ``emd2`` function, which
+    returns the minimal total transport cost (i.e., the squared 2-Wasserstein distance).
+    The square root of this value is returned as the final Wasserstein distance.
+
+
+    - A small distance indicates that the two files have similar spectral-embedding
+      distributions (i.e., many nearby or overlapping cluster centroids).
+    - A large distance indicates dissimilar spectra (i.e., clusters far apart in the
+      embedding space).
+    - ``emd2`` solves the exact OT problem (not entropic regularization).
+
+    :param centers_i : ndarray of shape (K1, m)
+        Cluster centroids for distribution i (each row is one centroid in an m-dimensional space).
+
+    :param weights_i : ndarray of shape (K1,)
+        Non-negative weights associated with ``centers_i``. Must sum to 1 (POT requirement).
+
+    :param centers_j : ndarray of shape (K2, m)
+        Cluster centroids for distribution j.
+
+    :param weights_j : ndarray of shape (K2,)
+        Non-negative weights associated with ``centers_j``. Must sum to 1.
+
+    :return: float
+        The 2-Wasserstein distance between the two distributions, computed as the
+        square root of the optimal transport cost returned by POT’s ``emd2`` solver.
+
+    """
+    # build the cost matrix (squared Euclidean):
     ## this gives the pairwise squared Euclidean distances between every cluster centroid in file i
     ## and every cluster centroid in file j,
     ## M is a K_i * K_j matrix with each entry M_kl the "cost" to move a unit of weight from centroid k
@@ -127,19 +207,51 @@ def wasserstein_between(centers_i, w_i, centers_j, w_j):
     ## the OT solver finds a transport plan T_kl that minimizes total cost SUM(T_kl M_kl)
     ## POT expects distributions to sum to 1 (they already do)
     ## emd2 returns the transport cost, emd2 is the Waserstein distance squared
-    emd2 = ot.emd2(w_i, w_j, M)
+    emd2 = ot.emd2(weights_i, weights_j, M)
     return np.sqrt(emd2) ## sqrt of squared cost to get Wasserstein
 
-## pairwise
-## do the calculation for all file pairs i, j, resulting in a symmetric distance matrix D of shape
-## (num_files * num_files)
-n = len(files)
-D = np.zeros((n, n))
-for i in range(n):
-    for j in range(i, n):
-        d = wasserstein_between(file_centers[i], file_weights[i], file_centers[j], file_weights[j])
+
+# 6) Compute distance matrix for all mzML files
+# ------------------------------------------------
+relative_path = Path(MZML_DIR)
+files = list(relative_path.rglob("*.mzML"))
+files = sorted([str(f) for f in files])
+file_signatures = {}
+
+## precompute embeddings and signatures
+for files_i in files:
+    print("Processing:", files_i)
+
+    ## obtain new location to store embeddings
+    files_i_embedding = ("data/embeddings_MS2/" +
+                         files_i.replace("data/", "").replace(".mzML", "") +
+                         ".npy")
+    ## obtain embeddings and save to the new location, create directory if the path does not exist yet
+    embedding_i = get_file_embeddings(files_i, embedding_model=m2ds_embeddings)
+    print("Saving embedding to file:", files_i_embedding)
+    os.makedirs(os.path.dirname(files_i_embedding), exist_ok=True)
+    np.save(files_i_embedding, embedding_i)
+
+    ## obtain signatures and write to file_signatures
+    centers, weights = get_signatures(embedding_i, N_CLUSTERS=N_CLUSTERS)
+    file_signatures[files_i] = (centers, weights)
+
+## compute full matrix
+N = len(files)
+D = np.zeros((N, N))
+
+for i in range(N):
+    for j in range(i+1, N):
+        c_i, w_i = file_signatures[files[i]]
+        c_j, w_j = file_signatures[files[j]]
+        d = wasserstein_distance(centers_i=c_i, weights_i=w_i, centers_j=c_j, weights_j=w_j)
         D[i, j] = D[j, i] = d
 
+## result: D is file × file distance matrix
 df = pd.DataFrame(D, index=file_names, columns=file_names)
-df.to_csv("wasserstein_distances.csv")
-print("Script completed. Saved Waserstein distances to file wasserstein_distances.csv")
+df.to_csv("data/ms2deepscore_wasserstein_distance_matrix.csv")
+np.save("data/ms2deepscore_signatures_centers_weights.npy", file_signatures)
+np.save("data/ms2deepscore_wasserstein_distance_matrix.npy", D)
+
+print("Script completed. Saved Waserstein distances to file data/ms2deepscore_wasserstein_distance_matrix.csv")
+
