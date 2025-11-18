@@ -97,14 +97,14 @@ def preprocess_spectrum_list(spectra):
         ## normalize: all intensities will be within 0 and 1
         spectra_i = normalize_intensities(spectra_i)
         spectra_i = require_precursor_mz(spectra_i)
-        spectra_i = require_correct_ionmode(spectra_i)
+        spectra_i = require_correct_ionmode(spectra_i, ion_mode_to_keep="both")
         spectra_i = correct_charge(spectra_i)
         spectra_i = add_parent_mass(spectra_i)
         ## remove peaks <0.5% max
         spectra_i = select_by_relative_intensity(spectra_i, intensity_from=0.005)
-        spectra_i = require_minimum_number_of_peaks(spectra, n_required=3)
+        spectra_i = require_minimum_number_of_peaks(spectra_i, n_required=3)
         ## append spectra_i to spectra_processed
-        spectra_procesed.append(spectra_i)
+        spectra_processed.append(spectra_i)
     return spectra_processed
 
 def get_file_embeddings(mzml_path, embedding_model):
@@ -117,16 +117,8 @@ def get_file_embeddings(mzml_path, embedding_model):
     ## returns list of matchms.Spectrum objects
     spectra = load_spectra_with_polarity(mzml_path)
 
-
     ## preprocess spectra
-
-
-
-    ## remove empty spectra
-
-    s = select_by_mz(s, mz_from=50, mz_to=1000)  # keep only relevant m/z
-    s =
-spectra = [s for s in spectra if s is not None and len(s.peaks.mz) > 0]
+    spectra = preprocess_spectrum_list(spectra)
 
     ## obtain embeddings per each spectrum s in spectra
     embeddings = get_embedding(spectra, embedding_model=embedding_model)
@@ -251,25 +243,33 @@ def wasserstein_distance(centers_i, weights_i, centers_j, weights_j):
 relative_path = Path(MZML_DIR)
 files = list(relative_path.rglob("*.mzML"))
 files = sorted([str(f) for f in files])
-file_signatures = {}
+signatures = {}
 
 ## precompute embeddings and signatures
 for files_i in files:
     print("Processing:", files_i)
 
+    ## compute embedding and save
     ## obtain new location to store embeddings
-    files_i_embedding = ("data/embeddings_MS2/" +
-                         files_i.replace("data/", "").replace(".mzML", "") +
-                         ".npy")
+    files_i_replaced = files_i.replace("data/", "").replace(".mzML", "")
+    files_i_embedding = ("data/embeddings_MS2/" + files_i_replaced +"_embeddings.npy")
     ## obtain embeddings and save to the new location, create directory if the path does not exist yet
     embedding_i = get_file_embeddings(files_i, embedding_model=m2ds_embeddings)
     print("Saving embedding to file:", files_i_embedding)
     os.makedirs(os.path.dirname(files_i_embedding), exist_ok=True)
     np.save(files_i_embedding, embedding_i)
 
-    ## obtain signatures and write to file_signatures
-    centers, weights = get_signatures(embedding_i, N_CLUSTERS=N_CLUSTERS)
-    file_signatures[files_i] = (centers, weights)
+    ## compute signatures and save
+    ## obtain signatures
+    centers_i, weights_i = get_signatures(embedding_i, N_CLUSTERS=N_CLUSTERS)
+    files_i_centers = ("data/embeddings_MS2/" + files_i_replaced + "_centers.npy")
+    print("Saving centers to file:", files_i_centers)
+    np.save(files_i_centers, centers_i)
+    files_i_weights = ("data/embeddings_MS2/" + files_i_replaced + "_weights.npy")
+    print("Saving weights to file:", files_i_weights)
+    np.save(files_i_weights, weights_i)
+    ## assign to signatures
+    signatures[files_i] = (centers_i, weights_i)
 
 ## compute full matrix
 N = len(files)
