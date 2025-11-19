@@ -100,9 +100,9 @@ def preprocess_spectrum_list(spectra):
         spectra_i = require_correct_ionmode(spectra_i, ion_mode_to_keep="both")
         spectra_i = correct_charge(spectra_i)
         spectra_i = add_parent_mass(spectra_i)
-        ## remove peaks <0.5% max
-        spectra_i = select_by_relative_intensity(spectra_i, intensity_from=0.005)
-        spectra_i = require_minimum_number_of_peaks(spectra_i, n_required=3)
+        ## remove peaks <1% max
+        spectra_i = select_by_relative_intensity(spectra_i, intensity_from=0.01)
+        spectra_i = require_minimum_number_of_peaks(spectra_i, n_required=20)
         ## append spectra_i to spectra_processed
         spectra_processed.append(spectra_i)
     return spectra_processed
@@ -118,10 +118,13 @@ def get_file_embeddings(mzml_path, embedding_model):
     spectra = load_spectra_with_polarity(mzml_path)
 
     ## preprocess spectra
-    spectra = preprocess_spectrum_list(spectra)
+    spectra = preprocess_spectrum_list(spectra=spectra)
+
+    ## remove empty spectra
+    spectra = [s for s in spectra if s is not None]
 
     ## obtain embeddings per each spectrum s in spectra
-    embeddings = get_embedding(spectra, embedding_model=embedding_model)
+    embeddings = get_embedding(spectrum=spectra, embedding_model=embedding_model)
 
     ## return numpy array
     return embeddings
@@ -252,22 +255,23 @@ for files_i in files:
     ## compute embedding and save
     ## obtain new location to store embeddings
     files_i_replaced = files_i.replace("data/", "").replace(".mzML", "")
-    files_i_embedding = ("data/embeddings_MS2/" + files_i_replaced +"_embeddings.npy")
+    files_i_embedding = ("data/embeddings_MS2/" + files_i_replaced +"_embeddings.csv.gz")
     ## obtain embeddings and save to the new location, create directory if the path does not exist yet
-    embedding_i = get_file_embeddings(files_i, embedding_model=m2ds_embeddings)
+    embedding_i = get_file_embeddings(mzml_path=files_i, embedding_model=m2ds_embeddings)
     print("Saving embedding to file:", files_i_embedding)
     os.makedirs(os.path.dirname(files_i_embedding), exist_ok=True)
-    np.save(files_i_embedding, embedding_i)
+    df = pd.DataFrame(embedding_i)
+    df.to_csv(files_i_embedding, compression="gzip", index=False)
 
     ## compute signatures and save
     ## obtain signatures
-    centers_i, weights_i = get_signatures(embedding_i, N_CLUSTERS=N_CLUSTERS)
-    files_i_centers = ("data/embeddings_MS2/" + files_i_replaced + "_centers.npy")
+    centers_i, weights_i = get_signatures(embeddings=embedding_i, N_CLUSTERS=N_CLUSTERS)
+    files_i_centers = ("data/embeddings_MS2/" + files_i_replaced + "_centers.csv")
     print("Saving centers to file:", files_i_centers)
-    np.save(files_i_centers, centers_i)
-    files_i_weights = ("data/embeddings_MS2/" + files_i_replaced + "_weights.npy")
+    np.savetxt(files_i_centers, centers_i, delimiter=",")
+    files_i_weights = ("data/embeddings_MS2/" + files_i_replaced + "_weights.csv")
     print("Saving weights to file:", files_i_weights)
-    np.save(files_i_weights, weights_i)
+    np.savetxt(files_i_weights, weights_i, delimiter=",")
     ## assign to signatures
     signatures[files_i] = (centers_i, weights_i)
 
@@ -277,15 +281,19 @@ D = np.zeros((N, N))
 
 for i in range(N):
     for j in range(i+1, N):
-        c_i, w_i = file_signatures[files[i]]
-        c_j, w_j = file_signatures[files[j]]
-        d = wasserstein_distance(centers_i=c_i, weights_i=w_i, centers_j=c_j, weights_j=w_j)
+        c_i, w_i = signatures[files[i]]
+        c_j, w_j = signatures[files[j]]
+        ## some files may not contain MS2 spectra, in that case c_i/c_j will be of length 0
+        if len(c_i) != 0 and len(c_j) != 0:
+            d = wasserstein_distance(centers_i=c_i, weights_i=w_i, centers_j=c_j, weights_j=w_j)
+        else:
+            d = None
         D[i, j] = D[j, i] = d
 
 ## result: D is file × file distance matrix
-df = pd.DataFrame(D, index=file_names, columns=file_names)
+df = pd.DataFrame(D, index=files, columns=files)
 df.to_csv("data/ms2deepscore_wasserstein_distance_matrix.csv")
-np.save("data/ms2deepscore_signatures_centers_weights.npy", file_signatures)
+np.save("data/ms2deepscore_signatures_centers_weights.npy", signatures)
 np.save("data/ms2deepscore_wasserstein_distance_matrix.npy", D)
 
 print("Script completed. Saved Waserstein distances to file data/ms2deepscore_wasserstein_distance_matrix.csv")
