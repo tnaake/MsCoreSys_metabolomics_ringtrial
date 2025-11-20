@@ -32,63 +32,137 @@ m2ds_embeddings = MS2DeepScore(embedding_model)
 #spec2vec = Spec2Vec(model=w2v, intensity_weighting_power=0.5, allowed_missing_percentage=5.0)
 
 ## 2) load mzML files
-def extract_polarity_from_mzml(mzml_path):
+def load_spectra_with_metadata(mzml_path):
     """
-    Returns a list of 'positive'/'negative'/None per spectrum (MS level 2 only).
+    Load MS2 spectra using matchms and attach:
+        - ionmode (positive/negative)
+        - precursor_mz
+        - precursor_intensity
+        - charge
+    """
+    spectra = list(load_from_mzml(mzml_path))
+
+    # Extract metadata from mzML XML (only MS2 spectra)
+    polarity_list, precursor_info = extract_polarity_and_precursorinfo_from_mzml(mzml_path)
+
+    # sanity check: matchms loads MS2 only → lengths must match
+    assert len(spectra) == len(polarity_list) == len(precursor_info)
+
+    for spectrum, polarity, precinfo in zip(spectra, polarity_list, precursor_info):
+
+        # ionmode
+        if polarity is not None:
+            spectrum.set("ionmode", polarity)
+
+        # precursor data
+        if precinfo["precursor_mz"] is not None:
+            spectrum.set("precursor_mz", precinfo["precursor_mz"])
+        if precinfo["precursor_intensity"] is not None:
+            spectrum.set("precursor_intensity", precinfo["precursor_intensity"])
+        if precinfo["charge"] is not None:
+            spectrum.set("charge", precinfo["charge"])
+
+    return spectra
+
+def extract_polarity_and_precursorinfo_from_mzml(mzml_path):
+    """
+    Returns:
+       polarity_list = ["positive"/"negative"/None] for each MS2 spectrum
+       precursor_info_list = [
+            {"precursor_mz": float or None,
+             "precursor_intensity": float or None,
+             "charge": int or None},
+            ...
+       ]
     """
     polarity_list = []
+    precursor_info_list = []
+
     file_mzML = etree.parse(mzml_path)
 
     for spectrum in file_mzML.findall(".//{*}spectrum"):
-        ## obtain MS level
+
+        # Check if MS level = 2
         mslevel = spectrum.find(".//{*}cvParam[@accession='MS:1000511']")
-        if mslevel is not None and mslevel.get("value") == "2":
-            ## find positive ionization entries
-            pos = spectrum.find(".//{*}cvParam[@accession='MS:1000130']")
-            ## find negative ionization entries
-            neg = spectrum.find(".//{*}cvParam[@accession='MS:1000129']")
+        if mslevel is None or mslevel.get("value") != "2":
+            continue
 
-            if pos is not None:
-                polarity_list.append("positive")
-            elif neg is not None:
-                polarity_list.append("negative")
-            else:
-                polarity_list.append(None)
-    return polarity_list
+        # --------
+        # ION POLARITY
+        # --------
+        pos = spectrum.find(".//{*}cvParam[@accession='MS:1000130']")  # positive scan
+        neg = spectrum.find(".//{*}cvParam[@accession='MS:1000129']")  # negative scan
 
-def load_spectra_with_polarity(mzml_path):
-    spectra = list(load_from_mzml(mzml_path))
-    polarities = extract_polarity_from_mzml(mzml_path)
+        if pos is not None:
+            polarity_list.append("positive")
+        elif neg is not None:
+            polarity_list.append("negative")
+        else:
+            polarity_list.append(None)
 
-    ## matchms loads only MS2 spectra, lengths should align
-    assert len(spectra) == len(polarities)
+        # --------
+        # PRECURSOR INFORMATION
+        # --------
+        precursor_mz = None
+        precursor_intensity = None
+        charge = None
 
-    for spectrum, polarity in zip(spectra, polarities):
-        #if polarity is not None:
-        spectrum.set("ionmode", polarity)
-        #else:
-        #    spectrum.set("ionmode", None)  ## or default
-    return spectra
+        for cv in spectrum.findall(".//{*}selectedIon/{*}cvParam"):
+            acc = cv.get("accession")
+            val = cv.get("value")
 
-## 3) Convert a matchms Spectrum into an embedding
-def get_embedding(spectrum, embedding_model):
+            if acc == "MS:1000744":        # precursor m/z
+                precursor_mz = float(val)
+            elif acc == "MS:1000042":      # precursor intensity
+                precursor_intensity = float(val)
+            elif acc == "MS:1000041":      # charge state
+                charge = int(val)
+
+        precursor_info_list.append({
+            "precursor_mz": precursor_mz,
+            "precursor_intensity": precursor_intensity,
+            "charge": charge
+        })
+
+    return polarity_list, precursor_info_list
+
+## 3) define filters for filtering/removing Spectra entries
+def filter_low_precursor_intensity(spectra, drop_fraction=0.2):
     """
-    :param spectrum: matchms spectrum object
-    :param embedding_model: ms2deepscore embedding model
-    :return:
-    Call embedding_model.get_embedding_array() from ms2deepscore
-    which returns a 1D numpy embedding vector.
+    Removes the lowest drop_fraction fraction of MS2 spectra based on precursor intensity.
     """
-    ## obtain the embedding vector
-    embedding = embedding_model.get_embedding_array(spectrum)
+    ## extract intensities (None -> NaN)
+    intensities = np.array([
+        s.metadata.get("precursor_intensity", np.nan)
+        for s in spectra
+    ], dtype=float)
 
-    ## return as numpy array
-    return np.array(embedding)
+    ## remove spectra with missing intensity before computing quantile
+    valid_mask = ~np.isnan(intensities)
+    valid_intensities = intensities[valid_mask]
 
-## 3) For each mzML file: get all embeddings
+    if len(valid_intensities) == 0:
+        print("Warning: No spectra contain precursor_intensity metadata.")
+        return spectra  ## return unchanged
+
+    ## determine cutoff at lowest X%
+    cutoff = np.nanquantile(valid_intensities, drop_fraction)
+
+    ## filter spectra
+    filtered = [
+        s for s, inten in zip(spectra, intensities)
+        if inten >= cutoff
+    ]
+
+    return filtered
+
 def preprocess_spectrum_list(spectra):
     spectra_processed = []
-    for spectra_i in spectra:
+
+    ## remove spectra with low precursor intensity (remove 20% lowest intensitites)
+    spectra_filtered = filter_low_precursor_intensity(spectra=spectra, drop_fraction=0.2)
+
+    for spectra_i in spectra_filtered:
         ## apply preprocessing steps in sequence
         spectra_i = add_precursor_mz(spectra_i)
         spectra_i = add_retention_time(spectra_i)
@@ -107,6 +181,22 @@ def preprocess_spectrum_list(spectra):
         spectra_processed.append(spectra_i)
     return spectra_processed
 
+## 4) Convert a matchms Spectrum into an embedding
+def get_embedding(spectrum, embedding_model):
+    """
+    :param spectrum: matchms spectrum object
+    :param embedding_model: ms2deepscore embedding model
+    :return:
+    Call embedding_model.get_embedding_array() from ms2deepscore
+    which returns a 1D numpy embedding vector.
+    """
+    ## obtain the embedding vector
+    embedding = embedding_model.get_embedding_array(spectrum)
+
+    ## return as numpy array
+    return np.array(embedding)
+
+## 5) For each mzML file: get all embeddings
 def get_file_embeddings(mzml_path, embedding_model):
     """
     :param mzml_path: string specifying the path to a mzML file
@@ -115,7 +205,7 @@ def get_file_embeddings(mzml_path, embedding_model):
     Return the embedding vectors as a list.
     """
     ## returns list of matchms.Spectrum objects
-    spectra = load_spectra_with_polarity(mzml_path)
+    spectra = load_spectra_with_metadata(mzml_path)
 
     ## preprocess spectra
     spectra = preprocess_spectrum_list(spectra=spectra)
@@ -129,7 +219,7 @@ def get_file_embeddings(mzml_path, embedding_model):
     ## return numpy array
     return embeddings
 
-# 4) Compress to K signatures per file
+# 6) Compress to K signatures per file
 def get_signatures(embeddings, N_CLUSTERS=N_CLUSTERS):
     """
     :param embeddings: numpy array containing the embedding
@@ -159,7 +249,7 @@ def get_signatures(embeddings, N_CLUSTERS=N_CLUSTERS):
     return centers, weights
 
 
-# 5) Compute pairwise Wasserstein distance using POT (OT with squared Euclidean cost)
+# 7) Compute pairwise Wasserstein distance using POT (OT with squared Euclidean cost)
 # ## each spectrum is a “point” in a high-dimensional “spectral meaning” space,
 # ## each file is a “cloud” (distribution) of these points,
 # ## the Wasserstein distance between two files measures how much “work” you would need to transform
@@ -241,7 +331,7 @@ def wasserstein_distance(centers_i, weights_i, centers_j, weights_j):
     return np.sqrt(emd2) ## sqrt of squared cost to get Wasserstein
 
 
-# 6) Compute distance matrix for all mzML files
+# 8) Compute distance matrix for all mzML files
 # ------------------------------------------------
 relative_path = Path(MZML_DIR)
 files = list(relative_path.rglob("*.mzML"))
