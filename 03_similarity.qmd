@@ -21,140 +21,54 @@ suppressPackageStartupMessages(library("Spectra"))
 knitr::opts_knit$set(root.dir = "~/Documents/GitHub/MsCoreSys_metabolomics_ringtrial")
 ```
 
-# Create Spectra object
+Run the script `03_distance_from_spectra.py`. 
 
-Get all mzML files.
+Load the result into `R`.
+
+Distance matrix `D` containing Wasserstein distances between files. 
+
 ```{r}
-## lab_Bindila
-bindila_metab_neg <- list.files(
-    "data/lab_Bindila/AG_Bindila_MSCoreSys_ringtrial_Negative_mode_QC_Raw_file_280425/mzML/",
-    pattern = "[.]mzML", full.names = TRUE)
-bindila_metab_neg_mzML <- list.files(
-    "data/lab_Bindila/AG_Bindila_MSCoreSys_ringtrial_Negative_mode_QC_Raw_files_mzML/",
-    pattern = "[.]mzML", full.names = TRUE)
-bindila_metab_pos <- list.files(
-    "data/lab_Bindila/AG_Bindila_MSCoreSys_ringtrial_Positive_mode_QC_Raw_file_280425/mzML/",
-    pattern = "[.]mzML", full.names = TRUE)
-bindila_metab_pos_mzML <- list.files(
-    "data/lab_Bindila/AG_Bindila_MSCoreSys_ringtrial_Positive_mode_QC_Raw_files_mzML/",
-    pattern = "[.]mzML", full.names = TRUE)
-
-## lab_Hopf
-hopf_lipid_neg <- list.files(
-    "data/lab_Hopf/Hopf_lipidomic_neg/final/mzML/",
-    pattern = "[.]mzML", full.names = TRUE)
-hopf_lipid_pos <- list.files(
-    "data/lab_Hopf/Hopf_lipidomic_pos/final/mzML/",
-    pattern = "[.]mzML", full.names = TRUE)
-hopf_metab_neg <- list.files(
-    "data/lab_Hopf/Hopf_small_metabolites_pos_neg/neg/mzML/",
-    pattern = "[.]mzML", full.names = TRUE)
-hopf_metab_pos <- list.files(
-    "data/lab_Hopf/Hopf_small_metabolites_pos_neg/pos/mzML/",
-    pattern = "[.]mzML", full.names = TRUE)
-
-## lab_Poschet
-poschet_metab <- list.files(
-    "data/lab_Poschet//mzML/",
-    pattern = "[.]mzML", full.names = TRUE)
-
-## lab_Schmidlin
-schmidlin_metab_wiff <- list.files(
-    "data/lab_Schmidlin/mzML_from_wiff/",
-    pattern = "[.]mzML", full.names = TRUE)
-schmidlin_metab_wiff2 <- list.files(
-    "data/lab_Schmidlin/mzML_from_wiff2/",
-    pattern = "[.]mzML", full.names = TRUE)
+wasserstein <- read.csv("data/ms2deepscore_wasserstein_distance_matrix.csv", 
+    header = TRUE, row.names = 1)
 ```
 
-Create `Spectra` object.
+Create heatmap.
 
 ```{r}
-all_mzML_files <- c(
-    ## lab_Bindila
-    bindila_metab_neg, 
-    bindila_metab_pos, 
-    ## do not load the mzML files 
-    ##bindila_metab_neg_mzML, 
-    ##bindila_metab_pos_mzML,
+wasserstein <- as.matrix(wasserstein)
+sum_nas_rows <- apply(wasserstein, 1, function(rows_i) sum(is.na(rows_i)))
+sum_nas_cols <- apply(wasserstein, 2, function(cols_i) sum(is.na(cols_i)))
+wasserstein <- wasserstein[sum_nas_rows != 577, sum_nas_cols != 577]
 
-    ## lab_Hopf
-    hopf_lipid_neg, hopf_lipid_pos, hopf_metab_neg, hopf_metab_pos,
-    
-    ## lab_Poschet
-    poschet_metab,
+hm <- heatmap(wasserstein)
+rownames(wasserstein)[hm$rowInd]
 
-    ## lab_Schmidlin
-    schmidlin_metab_wiff, schmidlin_metab_wiff2
-)
-sps <- Spectra(all_mzML_files, backend = MsBackendMzR(), BPPARAM = SerialParam())
+d <- stats::cmdscale(wasserstein, k = ncol(wasserstein) - 1, eig = TRUE)
+tbl <- tibble::as_tibble(d$points)
+colnames(tbl) <- paste("Axis.", seq_len(ncol(tbl)), sep = "")
+tbl <- tbl |>
+    mutate(sample = rownames(wasserstein))
+tbl$sample <- stringr::str_remove(tbl$sample, pattern = "data/lab_") |>
+    stringr::str_remove(pattern = "AG_Bindila_MSCoreSys_ringtrial_") |>
+    stringr::str_remove(pattern = "_QC_Raw_file") |>
+    stringr::str_remove(pattern = "/final/Ring_trial_") |>
+    stringr::str_remove(pattern = "_pos_neg/") |>
+    stringr::str_remove(pattern = "Ring_trial_") |>
+    stringr::str_remove(pattern = "mzML/") |>
+    stringr::str_remove(pattern = "_from_wiff/20250110_Metabolomics_Liver_Ringtrial_") |>
+    stringr::str_remove(pattern = "_from_wiff2/20250110_Metabolomics_Liver_Ringtrial_") |>
+    stringr::str_remove(pattern = "[.]mzML")
 
-
-## lab_Poschet
-# poschet_metab <- poschet_metab[1]
-# 
-# be <- backendInitialize(ChromBackendMzR(),
-#     files = poschet_metab,
-#     BPPARAM = SerialParam()
-# )
-# 
-# chrom <- Chromatograms(be)
-# productMz_chrom <- sort(unique(productMz(chrom)))
-# precursorMz_chrom <- sort(unique(precursorMz(chrom)))
-# chrom$rtime ## 55-1627 events per entry
-# 
-# sps <- Spectra(poschet_metab, backend = MsBackendMzR(), BPPARAM = SerialParam())
-# intensity(chrom[67094,])
-# chrom <- chrom[1:10,]
-# chrom$precursorMz
+## plotting
+g <- ggplot2::ggplot(tbl, mapping = aes(x = Axis.1, y = Axis.2, text = sample)) +
+    ggplot2::geom_point()
+ggplotly(g)
 ```
 
-# Calculate similarity
-
+Multi-dimensional scaling.
 ```{r}
-files <- sps$dataOrigin |>
-    unique()
-files_combn <- combn(files, m = 2)
-
-similarity_mat_l <- list(
-    max = Matrix::Matrix(NA, nrow = length(files), ncol = length(files), 
-        dimnames = list(files, files)),
-    mean = Matrix::Matrix(NA, nrow = length(files), ncol = length(files), 
-        dimnames = list(files, files))
-)
-
-## normalize the intensities (with max intensity = 1)
-...
-
-for (comb_col_i in seq_len(ncol(files_combn))) {
-    
-    ## obtain the file names of comb_col_i and assign to row_i and col_i
-    row_i <- files_combinations[1, comb_col_i]
-    col_i <- files_combinations[2, comb_col_i]
-    
-    ## obtain sps_row_i and sps_col_i that contains only spectral information
-    ## from the respective files
-    sps_row_i <- sps[sps$dataOrigin == row_i]
-    sps_col_i <- sps[sps$dataOrigin == col_i]
-    
-    ## iterate through elements of sps_row_i
-    for (j in seq_len(length(sps_row_i))) {
-        spectra_similarity <- compareSpectra(x = sps_row_i[j], y = sps_col_i, 
-            MAPFUNN = joinPeaks, type = "outer", FUN = MsCoreUtils::ndotproduct, 
-            ppm = 20)
-    }
-    
-}
-
-similarity_ndotproduct <- compareSpectra(sps[1:20], MAPFUN = joinPeaks, 
-    type = "outer", FUN = MsCoreUtils::ndotproduct, ppm = 20)
-compareSpectra(sps[1:10], MAPFUN = joinPeaksGnps, FUN = MsCoreUtils::gnps, ppm = 20)
-
-``` 
-
-Save the data.
-
-```{r}
+wasserstein[10,28] <- wasserstein[10,28] + 1e-10
+wasserstein[33,34] <- wasserstein[33,34] + 1e-10
+mds <- MASS::isoMDS(wasserstein)
 ```
-
 
