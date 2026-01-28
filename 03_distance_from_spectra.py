@@ -82,16 +82,14 @@ def extract_polarity_and_precursorinfo_from_mzml(mzml_path):
 
     for spectrum in file_mzML.findall(".//{*}spectrum"):
 
-        # Check if MS level = 2
+        ## check if MS level = 2
         mslevel = spectrum.find(".//{*}cvParam[@accession='MS:1000511']")
         if mslevel is None or mslevel.get("value") != "2":
             continue
 
-        # --------
-        # ION POLARITY
-        # --------
-        pos = spectrum.find(".//{*}cvParam[@accession='MS:1000130']")  # positive scan
-        neg = spectrum.find(".//{*}cvParam[@accession='MS:1000129']")  # negative scan
+        ## ION POLARITY
+        pos = spectrum.find(".//{*}cvParam[@accession='MS:1000130']") ## positive scan
+        neg = spectrum.find(".//{*}cvParam[@accession='MS:1000129']") ## negative scan
 
         if pos is not None:
             polarity_list.append("positive")
@@ -100,9 +98,8 @@ def extract_polarity_and_precursorinfo_from_mzml(mzml_path):
         else:
             polarity_list.append(None)
 
-        # --------
-        # PRECURSOR INFORMATION
-        # --------
+
+        ## PRECURSOR INFORMATION
         precursor_mz = None
         precursor_intensity = None
         charge = None
@@ -111,11 +108,11 @@ def extract_polarity_and_precursorinfo_from_mzml(mzml_path):
             acc = cv.get("accession")
             val = cv.get("value")
 
-            if acc == "MS:1000744":        # precursor m/z
+            if acc == "MS:1000744": ## precursor m/z
                 precursor_mz = float(val)
-            elif acc == "MS:1000042":      # precursor intensity
+            elif acc in ["MS:1000042", "MS:1001141"]: ## precursor intensity
                 precursor_intensity = float(val)
-            elif acc == "MS:1000041":      # charge state
+            elif acc == "MS:1000041": ## charge state
                 charge = int(val)
 
         precursor_info_list.append({
@@ -132,18 +129,16 @@ def filter_low_precursor_intensity(spectra, drop_fraction=0.2):
     Removes the lowest drop_fraction fraction of MS2 spectra based on precursor intensity.
     """
     ## extract intensities (None -> NaN)
-    intensities = np.array([
-        s.metadata.get("precursor_intensity", np.nan)
-        for s in spectra
-    ], dtype=float)
+    intensities = np.array([s.metadata.get("precursor_intensity", np.nan) for s in spectra], dtype=float)
+
+    if all(math.isnan(intensity) for intensity in intensities):
+        ## if there is no precursor_intensity in the metadata slot, take the max intensities of the base peak as a proxy
+        print("Warning: No spectra contain precursor_intensity metadata. Infer filtering from the max intensities of the base peaks.")
+        intensities = np.array([np.max(s.peaks.intensities) for s in spectra], dtype=float)
 
     ## remove spectra with missing intensity before computing quantile
     valid_mask = ~np.isnan(intensities)
     valid_intensities = intensities[valid_mask]
-
-    if len(valid_intensities) == 0:
-        print("Warning: No spectra contain precursor_intensity metadata.")
-        return spectra  ## return unchanged
 
     ## determine cutoff at lowest X%
     cutoff = np.nanquantile(valid_intensities, drop_fraction)
